@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animal Feeding Tracker</title>
+    <!-- Load HTML5-QRCODE Library for Camera Scanning -->
+    <script src="https://unpkg.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f4f9f4; }
+        #reader { width: 100%; max-width: 500px; margin: auto; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .log-container { margin-top: 20px; max-width: 800px; margin-left: auto; margin-right: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #2e7d32; color: white; }
+        .status-message { font-weight: bold; color: #007bff; margin: 10px 0; min-height: 20px; }
+        .user-bar { background: #e0f2f1; padding: 10px; border-radius: 5px; max-width: 500px; margin: 0 auto 15px auto; display: flex; justify-content: space-between; align-items: center; }
+        .btn-change-user { background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <h1>🦁 Animal Feeding Log Tracker 🥕</h1>
+    
+    <!-- User Profile Bar -->
+    <div class="user-bar">
+        <span>Logged in as: <strong id="currentUserDisplay">Loading...</strong></span>
+        <button class="btn-change-user" onclick="changeUser()">Change User</button>
+    </div>
+
+    <p>Scan the QR code to log a feeding session to the Master Google Sheet.</p>
+    
+    <!-- Scanner Window -->
+    <div id="reader"></div>
+
+    <div class="status-message" id="statusMessage">System Ready...</div>
+
+    <!-- Local Backup Logs View -->
+    <div class="log-container">
+        <h2>Recent Offline Logs (Saved Device Backup)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Animal Fed</th>
+                    <th>Fed By (Person Name)</th>
+                    <th>Feeding Type</th>
+                    <th>Date & Time</th>
+                </tr>
+            </thead>
+            <tbody id="logTableBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // CONFIGURATION: Paste your deployment URL between the quotes below
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyW-SkwcQ0Qml1Tic4wVnpcrfLd1YJnUzvw5Ft6nz2ilPuXIs4oAzTrGmA0O8_pUPoTsA/exec";
+
+        document.addEventListener("DOMContentLoaded", () => {
+            checkUserSession();
+            loadLogs();
+        });
+
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess, onScanError);
+
+        // Forces a name setup if none is found in the browser
+        function checkUserSession() {
+            let storedName = localStorage.getItem("staffName");
+            if (!storedName || storedName.trim() === "") {
+                let name = prompt("Welcome! Please enter your name to start tracking feedings:");
+                if (name && name.trim() !== "") {
+                    localStorage.setItem("staffName", name.trim());
+                    storedName = name.trim();
+                } else {
+                    alert("A name is required to use this application. Reloading...");
+                    window.location.reload();
+                    return;
+                }
+            }
+            document.getElementById("currentUserDisplay").innerText = storedName;
+            return storedName;
+        }
+
+        // Let staff switch users seamlessly without purging feeding history
+        function changeUser() {
+            let newName = prompt("Enter the new staff member's name:", localStorage.getItem("staffName"));
+            if (newName && newName.trim() !== "") {
+                localStorage.setItem("staffName", newName.trim());
+                document.getElementById("currentUserDisplay").innerText = newName.trim();
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            html5QrcodeScanner.clear();
+
+            // Fetch the logged-in user name automatically
+            let personName = localStorage.getItem("staffName");
+            if (!personName) {
+                personName = checkUserSession();
+            }
+
+            // Step 1: Prompt for Animal Name
+            let animalName = prompt("QR Code Scanned!\n1. Enter the name of the animal being fed:");
+            if (!animalName || animalName.trim() === "") {
+                alert("Logging cancelled. Animal name is required.");
+                return resetScanner();
+            }
+
+            // Step 2: Prompt for Feeding Type Selection (Skips user name prompt completely!)
+            let feedingChoice = prompt(
+                `Animal: "${animalName.trim()}" | Fed By: "${personName}"\n\n` +
+                `2. Select Feeding Type (Type 1, 2, or 3):\n` +
+                ` Normal Diet\n` +
+                ` Enrichment\n` +
+                ` Token Feeding`
+            );
+
+            let feedingType = "";
+            if (feedingChoice === "1") {
+                feedingType = "Normal Diet";
+            } else if (feedingChoice === "2") {
+                feedingType = "Enrichment";
+            } else if (feedingChoice === "3") {
+                feedingType = "Token Feeding";
+            } else {
+                alert("Invalid selection or cancelled. Logging aborted.");
+                return resetScanner();
+            }
+
+            // If validation passes, send the data
+            sendDataToGoogle(animalName.trim(), personName, feedingType);
+        }
+
+        function onScanError(err) {}
+
+        function resetScanner() {
+            html5QrcodeScanner.render(onScanSuccess, onScanError);
+        }
+
+        function sendDataToGoogle(animal, person, type) {
+            let currentTime = new Date().toLocaleString();
+            let logEntry = { animal: animal, person: person, feedingType: type, time: currentTime };
+
+            document.getElementById("statusMessage").innerText = "⏳ Sending data to cloud Google Sheet...";
+
+            fetch(GOOGLE_SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(logEntry)
+            })
+            .then(() => {
+                document.getElementById("statusMessage").innerText = "✅ Successfully saved to Google Sheet!";
+                saveLocalBackup(logEntry);
+                setTimeout(() => { document.getElementById("statusMessage").innerText = "System Ready..."; }, 3000);
+                resetScanner();
+            })
+            .catch(error => {
+                document.getElementById("statusMessage").innerText = "❌ Network Error! Saved to device offline backup instead.";
+                saveLocalBackup(logEntry);
+                resetScanner();
+                console.error("Error:", error);
+            });
+        }
+
+        function saveLocalBackup(logEntry) {
+            let logs = JSON.parse(localStorage.getItem("feedingLogs")) || [];
+            logs.unshift(logEntry);
+            if(logs.length > 10) logs.pop(); 
+            localStorage.setItem("feedingLogs", JSON.stringify(logs));
+            loadLogs();
+        }
+
+        function loadLogs() {
+            let logs = JSON.parse(localStorage.getItem("feedingLogs")) || [];
+            let tableBody = document.getElementById("logTableBody");
+            tableBody.innerHTML = "";
+            logs.forEach(log => {
+                let row = `<tr>
+                    <td><strong>${log.animal}</strong></td>
+                    <td>${log.person}</td>
+                    <td><span style="background:#e8f5e9; padding:2px 6px; border-radius:4px; font-size:14px;">${log.feedingType}</span></td>
+                    <td>${log.time}</td>
+                </tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+    </script>
+</body>
+</html>
+

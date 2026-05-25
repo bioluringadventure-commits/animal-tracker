@@ -3,59 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Animal Feeding Tracker & QR Generator</title>
+    <title>Animal Feeding Tracker</title>
     <!-- Load HTML5-QRCODE Library for Camera Scanning -->
     <script src="https://unpkg.com"></script>
-    <!-- Load QRCode.js Library for Generating QR codes -->
-    <script src="https://cloudflare.com"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f4f9f4; }
-        .scanner-container { background: white; padding: 15px; border-radius: 8px; max-width: 500px; margin: 15px auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        #reader { width: 100%; max-width: 480px; margin: 10px auto; background: #fafafa; }
-        .log-container, .generator-container { margin-top: 30px; max-width: 800px; margin-left: auto; margin-right: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        #reader { width: 100%; max-width: 500px; margin: auto; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .log-container { margin-top: 20px; max-width: 700px; margin-left: auto; margin-right: auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background-color: #2e7d32; color: white; }
         .status-message { font-weight: bold; color: #007bff; margin: 10px 0; min-height: 20px; }
-        .user-bar { background: #e0f2f1; padding: 10px; border-radius: 5px; max-width: 500px; margin: 0 auto 15px auto; display: flex; justify-content: space-between; align-items: center; }
-        
-        /* Buttons Layout */
-        button { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer; }
-        .btn-scan { background-color: #ff9800; color: white; width: 100%; max-width: 300px; margin: 10px auto; display: block; }
-        .btn-change-user { background: #007bff; color: white; padding: 5px 10px; font-size: 14px; }
-        .btn-gen { background-color: #2e7d32; color: white; }
-        
-        .gen-input { padding: 10px; font-size: 16px; width: 60%; max-width: 300px; margin-right: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        #qrcode-output { margin-top: 20px; display: flex; justify-content: center; flex-direction: column; align-items: center; gap: 10px; }
     </style>
 </head>
 <body>
 
     <h1>🦁 Animal Feeding Log Tracker 🥕</h1>
+    <p>Scan the QR code to log a feeding session to the Master Google Sheet.</p>
     
-    <!-- User Profile Bar -->
-    <div class="user-bar">
-        <span>Logged in as: <strong id="currentUserDisplay">Loading...</strong></span>
-        <button class="btn-change-user" onclick="changeUser()">Change User</button>
-    </div>
-
-    <!-- 📷 SCANNER WORKSPACE AREA -->
-    <div class="scanner-container">
-        <p>Click the button below to turn on your camera and scan.</p>
-        <button class="btn-scan" id="scanControlBtn" onclick="toggleScanner()">📷 Start QR Scanner</button>
-        <div id="reader"></div>
-    </div>
+    <!-- Scanner Window -->
+    <div id="reader"></div>
 
     <div class="status-message" id="statusMessage">System Ready...</div>
-
-    <!-- 🖨️ QR CODE GENERATOR SECTION -->
-    <div class="generator-container">
-        <h2>🖨️ Create & Print Station QR Codes</h2>
-        <p>Type an animal name or station ID below to create its scanning code.</p>
-        <input type="text" id="animalInput" class="gen-input" placeholder="e.g., Leo the Lion, Pen 4">
-        <button class="btn-gen" onclick="generateQRCode()">Create QR Code</button>
-        <div id="qrcode-output"></div>
-    </div>
 
     <!-- Local Backup Logs View -->
     <div class="log-container">
@@ -65,7 +34,6 @@
                 <tr>
                     <th>Animal Fed</th>
                     <th>Fed By (Person Name)</th>
-                    <th>Feeding Type</th>
                     <th>Date & Time</th>
                 </tr>
             </thead>
@@ -75,128 +43,50 @@
 
     <script>
         // CONFIGURATION: Paste your deployment URL between the quotes below
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziR1eTpvXRZayhRvXT4PutCwhvsjGoB9LKYG0vY5One7ZPC4Mi_fZuy8MWHjKnGUXLcQ/exec";
+        const GOOGLE_SCRIPT_URL = "PASTE_YOUR_GOOGLE_WEB_APP_URL_HERE";
 
-        let html5Qrcode = null;
-        let isScanning = false;
+        document.addEventListener("DOMContentLoaded", loadLogs);
 
-        document.addEventListener("DOMContentLoaded", () => {
-            checkUserSession();
-            loadLogs();
-        });
-
-        function checkUserSession() {
-            let storedName = localStorage.getItem("staffName");
-            if (!storedName || storedName.trim() === "") {
-                let name = prompt("Welcome! Please enter your name to start tracking feedings:");
-                if (name && name.trim() !== "") {
-                    localStorage.setItem("staffName", name.trim());
-                    storedName = name.trim();
-                } else {
-                    alert("A name is required to use this application. Reloading...");
-                    window.location.reload();
-                    return;
-                }
-            }
-            document.getElementById("currentUserDisplay").innerText = storedName;
-            return storedName;
-        }
-
-        function changeUser() {
-            let newName = prompt("Enter the new staff member's name:", localStorage.getItem("staffName"));
-            if (newName && newName.trim() !== "") {
-                localStorage.setItem("staffName", newName.trim());
-                document.getElementById("currentUserDisplay").innerText = newName.trim();
-            }
-        }
-
-        // TRIGGER CONTROL FOR SCANNING BUTTON
-        function toggleScanner() {
-            if (isScanning) {
-                stopScanner();
-            } else {
-                startScanner();
-            }
-        }
-
-        function startScanner() {
-            html5Qrcode = new Html5Qrcode("reader");
-            isScanning = true;
-            document.getElementById("scanControlBtn").innerText = "🛑 Stop Scanner";
-            document.getElementById("scanControlBtn").style.backgroundColor = "#dc3545"; // Red color when active
-
-            html5Qrcode.start(
-                { facingMode: "environment" }, // Forces rear phone camera
-                { fps: 10, qrbox: 250 },
-                onScanSuccess,
-                onScanError
-            ).catch(err => {
-                console.error("Camera access failed:", err);
-                alert("Could not access camera. Please verify permission settings.");
-                stopScanner();
-            });
-        }
-
-        function stopScanner() {
-            if (html5Qrcode) {
-                html5Qrcode.stop().then(() => {
-                    html5Qrcode = null;
-                    isScanning = false;
-                    document.getElementById("scanControlBtn").innerText = "📷 Start QR Scanner";
-                    document.getElementById("scanControlBtn").style.backgroundColor = "#ff9800"; // Orange default
-                }).catch(err => console.error("Failed to safely stop camera:", err));
-            }
-        }
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess, onScanError);
 
         function onScanSuccess(decodedText, decodedResult) {
-            // Automatically turn off camera window upon successful scan to freeze action frame
-            stopScanner();
+            html5QrcodeScanner.clear();
 
-            let personName = localStorage.getItem("staffName");
-            if (!personName) personName = checkUserSession();
-
-            let animalName = decodedText.trim();
-            let confirmedAnimal = prompt("QR Code Read Successfully!\nConfirm or adjust the Animal Name:", animalName);
+            let animalName = prompt("QR Code Scanned!\n1. Enter the name of the animal being fed:");
             
-            if (!confirmedAnimal || confirmedAnimal.trim() === "") {
-                alert("Logging cancelled. Animal name is required.");
-                return;
-            }
-
-            let feedingChoice = prompt(
-                `Animal: "${confirmedAnimal.trim()}" | Fed By: "${personName}"\n\n` +
-                `Select Feeding Type (Type 1, 2, or 3):\n` +
-                ` Normal Diet\n` +
-                ` Enrichment\n` +
-                ` Token Feeding`
-            );
-
-            let feedingType = "";
-            if (feedingChoice === "1") {
-                feedingType = "Normal Diet";
-            } else if (feedingChoice === "2") {
-                feedingType = "Enrichment";
-            } else if (feedingChoice === "3") {
-                feedingType = "Token Feeding";
+            if (animalName && animalName.trim() !== "") {
+                
+                let personName = prompt(`Animal: "${animalName.trim()}"\n2. Enter your name (Person feeding):`);
+                
+                if (personName && personName.trim() !== "") {
+                    sendDataToGoogle(animalName.trim(), personName.trim());
+                } else {
+                    alert("Logging cancelled. Person name is required.");
+                    resetScanner();
+                }
             } else {
-                alert("Invalid selection or cancelled. Logging aborted.");
-                return;
+                alert("Logging cancelled. Animal name is required.");
+                resetScanner();
             }
-
-            sendDataToGoogle(confirmedAnimal.trim(), personName, feedingType);
         }
 
         function onScanError(err) {}
 
-        function sendDataToGoogle(animal, person, type) {
+        function resetScanner() {
+            html5QrcodeScanner.render(onScanSuccess, onScanError);
+        }
+
+        function sendDataToGoogle(animal, person) {
             let currentTime = new Date().toLocaleString();
-            let logEntry = { animal: animal, person: person, feedingType: type, time: currentTime };
+            let logEntry = { animal: animal, person: person, time: currentTime };
 
             document.getElementById("statusMessage").innerText = "⏳ Sending data to cloud Google Sheet...";
 
+            // Send data to the background Google script link
             fetch(GOOGLE_SCRIPT_URL, {
                 method: "POST",
-                mode: "no-cors",
+                mode: "no-cors", // Bypasses browser login requirements
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(logEntry)
             })
@@ -204,50 +94,35 @@
                 document.getElementById("statusMessage").innerText = "✅ Successfully saved to Google Sheet!";
                 saveLocalBackup(logEntry);
                 setTimeout(() => { document.getElementById("statusMessage").innerText = "System Ready..."; }, 3000);
+                resetScanner();
             })
             .catch(error => {
                 document.getElementById("statusMessage").innerText = "❌ Network Error! Saved to device offline backup instead.";
                 saveLocalBackup(logEntry);
+                resetScanner();
                 console.error("Error:", error);
             });
         }
 
+        // Saves a copy on the phone browser just in case internet drops
         function saveLocalBackup(logEntry) {
             let logs = JSON.parse(localStorage.getItem("feedingLogs")) || [];
             logs.unshift(logEntry);
-            if(logs.length > 10) logs.pop(); 
+            if(logs.length > 10) logs.pop(); // Keep only last 10 entries locally
             localStorage.setItem("feedingLogs", JSON.stringify(logs));
             loadLogs();
         }
 
-function loadLogs() {
-let logs = JSON.parse(localStorage.getItem("feedingLogs")) || [];
-let tableBody = document.getElementById("logTableBody");
-tableBody.innerHTML = "";
-logs.forEach(log => {
-let row = <tr> <td><strong>${log.animal}</strong></td> <td>${log.person}</td> <td><span style="background:#e8f5e9; padding:2px 6px; border-radius:4px; font-size:14px;">${log.feedingType}</span></td> <td>${log.time}</td> </tr>;
-tableBody.innerHTML += row;
-});
-}
-function generateQRCode() {
-let text = document.getElementById("animalInput").value.trim();
-let outputDiv = document.getElementById("qrcode-output");
-if (!text) { alert("Please type an animal name first!"); return; }
-outputDiv.innerHTML = "";
-let label = document.createElement("p");
-label.innerHTML = <strong>Scan Code For:</strong> ${text}<br><small>(Right-click/hold image to save & print)</small>;
-outputDiv.appendChild(label);
-let qrContainer = document.createElement("div");
-outputDiv.appendChild(qrContainer);
-new QRCode(qrContainer, {
-text: text,
-width: 180,
-height: 180,
-colorDark : "#000000",
-colorLight : "#ffffff",
-correctLevel : QRCode.CorrectLevel.H
-});
-}
+        function loadLogs() {
+            let logs = JSON.parse(localStorage.getItem("feedingLogs")) || [];
+            let tableBody = document.getElementById("logTableBody");
+            tableBody.innerHTML = "";
+            logs.forEach(log => {
+                let row = `<tr><td><strong>${log.animal}</strong></td><td>${log.person}</td><td>${log.time}</td></tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
     </script>
 </body>
 </html>
+
